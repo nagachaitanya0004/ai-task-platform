@@ -6,7 +6,7 @@ const taskSchema = new mongoose.Schema({
   inputText: { type: String, required: true },
   operation: { 
     type: String, 
-    enum: ['summarize', 'analyze', 'extract'],
+    enum: ['uppercase', 'lowercase', 'reverse', 'wordcount'],
     required: true
   },
   status: {
