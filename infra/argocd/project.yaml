@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: ai-task-platform
+  namespace: argocd
+spec:
+  description: AI Task Platform project for managing MERN + Python worker deployment
+  sourceRepos:
+  - '*'
+  destinations:
+  - namespace: ai-task-platform
+    server: https://kubernetes.default.svc
+  - namespace: argocd
+    server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+  - group: '*'
+    kind: '*'
+  namespaceResourceBlacklist:
+  - group: ''
+    kind: ConfigMap
+    name: kube-root-ca.crt
