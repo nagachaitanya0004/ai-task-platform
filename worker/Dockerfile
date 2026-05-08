@@ -1,22 +1,36 @@
+# Stage 1: Builder
 FROM python:3.11-slim AS builder
 
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --user --no-cache-dir -r requirements.txt
 
+# Create a virtual environment and update PATH
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install pinned requirements
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Stage 2: Runner
 FROM python:3.11-slim
 
-RUN adduser --disabled-password --gecos "" workeruser
+# Create a non-root user
+RUN addgroup --system workergroup && adduser --system --group workeruser
 
 WORKDIR /app
 
-COPY --from=builder /root/.local /home/workeruser/.local
-ENV PATH=/home/workeruser/.local/bin:$PATH
+# Copy the virtual environment from the builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
+# Copy the application logic
 COPY main.py .
 
-RUN chown -R workeruser:workeruser /app /home/workeruser
+# Transfer ownership to the non-root user
+RUN chown -R workeruser:workergroup /app
 
+# Switch to the non-root user
 USER workeruser
 
+# Run Python unbuffered so logs flush instantly to stdout
 CMD ["python", "-u", "main.py"]

@@ -33,7 +33,7 @@ const Register = () => {
       if (errorData?.details && Array.isArray(errorData.details)) {
         const newFieldErrors = {};
         errorData.details.forEach(detail => {
-          newFieldErrors[detail.path[0]] = detail.message;
+          newFieldErrors[detail.field] = detail.message;
         });
         setFieldErrors(newFieldErrors);
       } else if (errorData?.message) {

@@ -22,14 +22,22 @@ router.post('/', validate(createTaskSchema), async (req, res, next) => {
     
     await task.save();
 
+    // Queue to Redis if available
     const redisClient = req.app.locals.redisClient;
-    const jobPayload = JSON.stringify({
-      taskId: task._id.toString(),
-      operation,
-      inputText
-    });
-    
-    await redisClient.lPush('task_queue', jobPayload);
+    if (redisClient) {
+      try {
+        const jobPayload = JSON.stringify({
+          taskId: task._id.toString(),
+          operation,
+          inputText
+        });
+        await redisClient.lPush('task_queue', jobPayload);
+      } catch (redisErr) {
+        console.warn('⚠️  Redis unavailable, task saved but not queued:', redisErr.message);
+      }
+    } else {
+      console.warn('⚠️  Redis not connected, task saved but not queued');
+    }
     
     res.status(201).json(task);
   } catch (error) {

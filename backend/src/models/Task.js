@@ -6,7 +6,7 @@ const taskSchema = new mongoose.Schema({
   inputText: { type: String, required: true },
   operation: { 
     type: String, 
-    enum: ['uppercase', 'lowercase', 'reverse', 'wordcount'],
+    enum: ['summarize', 'analyze', 'extract'],
     required: true
   },
   status: {
@@ -14,8 +14,12 @@ const taskSchema = new mongoose.Schema({
     enum: ['pending', 'running', 'success', 'failed'],
     default: 'pending'
   },
-  result: { type: String, default: null },
-  logs: { type: [String], default: [] }
+  result: { type: mongoose.Schema.Types.Mixed, default: null },
+  logs: [{
+    timestamp: String,
+    level: String,
+    message: String
+  }]
 }, { timestamps: true });
 
 taskSchema.index({ userId: 1, createdAt: -1 });

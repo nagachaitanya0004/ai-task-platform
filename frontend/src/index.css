@@ -1,5 +1,1 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* Additional custom styles if needed, but we mostly use Tailwind */
+@import "tailwindcss";

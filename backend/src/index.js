@@ -1,4 +1,6 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -26,34 +28,35 @@ console.log(`JWT_SECRET: ${process.env.JWT_SECRET ? '***SET***' : 'NOT SET'}`);
 console.log(`CORS_ORIGIN: ${process.env.CORS_ORIGIN || 'NOT SET'}`);
 console.log('');
 
-// CORS MUST BE BEFORE HELMET AND ROUTES
+// ─── CORS (MUST be before helmet and all routes) ─────────────────────
+const allowedOrigins = [
+  'http://localhost',
+  'http://localhost:80',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  process.env.CORS_ORIGIN
+].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:80',
+  origin: function(origin, callback) {
+    // Allow requests with no origin (curl, Postman, health checks)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn(`CORS blocked request from origin: ${origin}`);
+      callback(null, true); // In dev mode, allow anyway but warn
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
-app.options('*', cors()); // handle preflight
+app.options('*', cors());
 
-// Security Middleware - Helmet with explicit config
+// ─── Security ────────────────────────────────────────────────────────
 app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", 'data:']
-    }
-  },
-  hsts: {
-    maxAge: 31536000,
-    includeSubDomains: true
-  },
-  frameguard: {
-    action: 'deny'
-  },
-  noSniff: true,
-  xssFilter: true
+  contentSecurityPolicy: false, // Disable CSP in dev to avoid blocking frontend
+  crossOriginEmbedderPolicy: false
 }));
 
 app.use(express.json({ limit: '10mb' }));
@@ -61,7 +64,7 @@ app.use(express.json({ limit: '10mb' }));
 // Request Logging
 app.use(morgan(NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-// Rate Limiting - Global tier
+// ─── Rate Limiting ───────────────────────────────────────────────────
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -71,35 +74,58 @@ const globalLimiter = rateLimit({
 });
 app.use(globalLimiter);
 
-// Rate Limiting - Auth tier (stricter)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 50, // More forgiving for dev/testing
   standardHeaders: true,
   legacyHeaders: false
 });
 
-// Redis connection
-const redisClient = createClient({
-  url: `redis://${process.env.REDIS_HOST || 'localhost'}:${process.env.REDIS_PORT || 6379}`,
-  socket: {
-    reconnectStrategy: (retries) => Math.min(retries * 50, 500)
+// ─── Redis connection (optional — app works without it) ──────────────
+let redisClient = null;
+let redisReady = false;
+
+async function connectRedis() {
+  try {
+    redisClient = createClient({
+      url: `redis://${process.env.REDIS_HOST || 'localhost'}:${process.env.REDIS_PORT || 6379}`,
+      socket: {
+        reconnectStrategy: (retries) => {
+          if (retries > 10) return false; // Stop retrying after 10 attempts
+          return Math.min(retries * 100, 3000);
+        }
+      }
+    });
+
+    redisClient.on('error', (err) => {
+      if (redisReady) {
+        console.error('❌ Redis Client Error:', err.message);
+      }
+      redisReady = false;
+    });
+
+    redisClient.on('ready', () => {
+      redisReady = true;
+      console.log('✅ Redis ready');
+    });
+
+    await redisClient.connect();
+    redisReady = true;
+    console.log('✅ Redis connected');
+  } catch (err) {
+    console.warn('⚠️  Redis not available — task queuing disabled. App will still work for auth.');
+    redisClient = null;
+    redisReady = false;
   }
-});
+}
 
-redisClient.on('error', (err) => console.error('❌ Redis Client Error:', err));
-redisClient.on('connect', () => console.log('✅ Redis connected'));
-redisClient.on('ready', () => console.log('✅ Redis ready'));
-app.locals.redisClient = redisClient;
+app.locals.redisClient = null; // Will be set after connection
 
-// Database connection
+// ─── MongoDB connection ──────────────────────────────────────────────
 const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/aitasks';
 console.log(`Connecting to MongoDB: ${mongoUri}`);
 
-mongoose.connect(mongoUri, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
+mongoose.connect(mongoUri)
   .then(() => {
     console.log('✅ MongoDB connected');
     console.log(`Database: ${mongoose.connection.name}`);
@@ -109,7 +135,6 @@ mongoose.connect(mongoUri, {
     process.exit(1);
   });
 
-// Connection event handlers
 mongoose.connection.on('disconnected', () => {
   console.warn('⚠️  MongoDB disconnected');
 });
@@ -118,24 +143,26 @@ mongoose.connection.on('error', (err) => {
   console.error('❌ MongoDB error:', err);
 });
 
-// Health endpoint - NO auth required
+// ─── Health endpoint (NO auth) ───────────────────────────────────────
 app.get('/api/health', async (req, res) => {
   try {
     const mongoStatus = mongoose.connection.readyState === 1 ? 'up' : 'down';
     let redisStatus = 'down';
     
-    try {
-      const pong = await redisClient.ping();
-      redisStatus = pong === 'PONG' ? 'up' : 'down';
-    } catch (err) {
-      redisStatus = 'down';
+    if (redisClient && redisReady) {
+      try {
+        const pong = await redisClient.ping();
+        redisStatus = pong === 'PONG' ? 'up' : 'down';
+      } catch (err) {
+        redisStatus = 'down';
+      }
     }
 
-    const isHealthy = mongoStatus === 'up' && redisStatus === 'up';
+    const isHealthy = mongoStatus === 'up';
     const statusCode = isHealthy ? 200 : 503;
 
     res.status(statusCode).json({
-      status: 'ok',
+      status: isHealthy ? 'ok' : 'degraded',
       services: {
         mongo: mongoStatus,
         redis: redisStatus
@@ -146,21 +173,18 @@ app.get('/api/health', async (req, res) => {
   } catch (error) {
     res.status(503).json({
       status: 'error',
-      services: {
-        mongo: 'down',
-        redis: 'down'
-      },
+      services: { mongo: 'down', redis: 'down' },
       uptime: process.uptime(),
       timestamp: new Date().toISOString()
     });
   }
 });
 
-// Routes
+// ─── Routes ──────────────────────────────────────────────────────────
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/tasks', taskRoutes);
 
-// 404 handler
+// ─── 404 handler ─────────────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({
     error: 'Route not found',
@@ -170,30 +194,28 @@ app.use((req, res) => {
   });
 });
 
-// Global error handler (must be last)
+// ─── Global error handler (must be last) ─────────────────────────────
 app.use(errorHandler);
 
+// ─── Start server ────────────────────────────────────────────────────
 async function startServer() {
-  try {
-    await redisClient.connect();
-    console.log('✅ Redis connected');
-    
-    app.listen(PORT, () => {
-      console.log(`✅ Server running on port ${PORT} in ${NODE_ENV} mode`);
-      console.log('');
-      console.log('Available endpoints:');
-      console.log('  POST   /api/auth/register');
-      console.log('  POST   /api/auth/login');
-      console.log('  POST   /api/tasks');
-      console.log('  GET    /api/tasks');
-      console.log('  GET    /api/tasks/:id');
-      console.log('  GET    /api/health');
-      console.log('');
-    });
-  } catch (error) {
-    console.error('❌ Failed to start server:', error);
-    process.exit(1);
-  }
+  // Try to connect Redis, but don't block server start
+  await connectRedis();
+  app.locals.redisClient = redisClient;
+
+  app.listen(PORT, () => {
+    console.log('');
+    console.log(`✅ Server running on port ${PORT} in ${NODE_ENV} mode`);
+    console.log('');
+    console.log('Available endpoints:');
+    console.log('  POST   /api/auth/register');
+    console.log('  POST   /api/auth/login');
+    console.log('  POST   /api/tasks');
+    console.log('  GET    /api/tasks');
+    console.log('  GET    /api/tasks/:id');
+    console.log('  GET    /api/health');
+    console.log('');
+  });
 }
 
 startServer();

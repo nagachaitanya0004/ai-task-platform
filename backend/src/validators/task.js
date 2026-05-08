@@ -10,7 +10,7 @@ const createTaskSchema = Joi.object({
     .max(10000)
     .required(),
   operation: Joi.string()
-    .valid('uppercase', 'lowercase', 'reverse', 'wordcount')
+    .valid('summarize', 'analyze', 'extract')
     .required()
 });
 
