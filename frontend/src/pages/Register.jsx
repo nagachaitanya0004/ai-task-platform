@@ -1,111 +1,134 @@
-import React, { useState, useContext } from 'react';
-import { useNavigate, Link, Navigate } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
-import { AuthContext } from '../context/AuthContext';
-import ErrorMessage from '../components/ErrorMessage';
+import { Loader2 } from 'lucide-react';
 
 const Register = () => {
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const { token } = useContext(AuthContext);
-
-  if (token) {
-    return <Navigate to="/dashboard" replace />;
-  }
+  const [formData, setFormData] = useState({ username: '', email: '', password: '' });
+  const [loading, setLoading] = useState(false);
+  const [generalError, setGeneralError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [showPassword, setShowPassword] = useState(false);
+  
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+    if (fieldErrors[e.target.name]) {
+      setFieldErrors({ ...fieldErrors, [e.target.name]: null });
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setGeneralError('');
+    setFieldErrors({});
     setLoading(true);
     
     try {
-      await api.post('/auth/register', { username, email, password });
+      await api.post('/api/auth/register', formData);
+      alert('Registration successful! Please login.');
       navigate('/login');
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to register. Please try again.');
+      const errorData = err.response?.data;
+      if (errorData?.details && Array.isArray(errorData.details)) {
+        const newFieldErrors = {};
+        errorData.details.forEach(detail => {
+          newFieldErrors[detail.path[0]] = detail.message;
+        });
+        setFieldErrors(newFieldErrors);
+      } else if (errorData?.message) {
+        setGeneralError(errorData.message);
+      } else if (errorData?.error) {
+        setGeneralError(errorData.error);
+      } else {
+        setGeneralError('An unexpected error occurred. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-[80vh] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-xl shadow-lg border border-gray-100">
-        <div>
-          <h2 className="mt-2 text-center text-3xl font-extrabold text-gray-900">
-            Create a new account
-          </h2>
+    <div className="min-h-[80vh] flex items-center justify-center p-4">
+      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
+        <div className="text-center mb-8">
+          <h2 className="text-3xl font-extrabold text-gray-900 mb-2">Create Account</h2>
+          <p className="text-gray-500 text-sm">Join the AI Task Platform</p>
         </div>
-        
-        <ErrorMessage message={error} />
-        
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="rounded-md shadow-sm -space-y-px">
-            <div>
-              <label htmlFor="username" className="sr-only">Username</label>
-              <input
-                id="username"
-                name="username"
-                type="text"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-primary focus:border-primary focus:z-10 sm:text-sm"
-                placeholder="Username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
-            </div>
-            <div>
-              <label htmlFor="email-address" className="sr-only">Email address</label>
-              <input
-                id="email-address"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-primary focus:border-primary focus:z-10 sm:text-sm"
-                placeholder="Email address"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div>
-              <label htmlFor="password" className="sr-only">Password</label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="new-password"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-3 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-primary focus:border-primary focus:z-10 sm:text-sm"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
+
+        {generalError && (
+          <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded text-sm text-red-700">
+            {generalError}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+            <input
+              name="username"
+              type="text"
+              required
+              className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all ${fieldErrors.username ? 'border-red-500' : 'border-gray-300'}`}
+              value={formData.username}
+              onChange={handleChange}
+            />
+            {fieldErrors.username && <p className="mt-1 text-xs text-red-500">{fieldErrors.username}</p>}
           </div>
 
           <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className={`group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
-            >
-              {loading ? 'Registering...' : 'Register'}
-            </button>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+            <input
+              name="email"
+              type="email"
+              required
+              className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all ${fieldErrors.email ? 'border-red-500' : 'border-gray-300'}`}
+              value={formData.email}
+              onChange={handleChange}
+            />
+            {fieldErrors.email && <p className="mt-1 text-xs text-red-500">{fieldErrors.email}</p>}
           </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+            <div className="relative">
+              <input
+                name="password"
+                type={showPassword ? 'text' : 'password'}
+                required
+                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all ${fieldErrors.password ? 'border-red-500' : 'border-gray-300'}`}
+                value={formData.password}
+                onChange={handleChange}
+              />
+              <button
+                type="button"
+                className="absolute inset-y-0 right-3 flex items-center text-gray-400 hover:text-gray-600 text-sm font-medium"
+                onClick={() => setShowPassword(!showPassword)}
+              >
+                {showPassword ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            {fieldErrors.password ? (
+              <p className="mt-1 text-xs text-red-500">{fieldErrors.password}</p>
+            ) : (
+              <p className="mt-1 text-xs text-gray-500">Must be at least 8 chars, 1 uppercase, 1 number.</p>
+            )}
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center disabled:opacity-70 disabled:cursor-not-allowed"
+          >
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Register'}
+          </button>
         </form>
-        
-        <div className="text-center mt-4">
-          <p className="text-sm text-gray-600">
-            Already have an account?{' '}
-            <Link to="/login" className="font-medium text-primary hover:text-primary-hover transition-colors">
-              Login here
-            </Link>
-          </p>
+
+        <div className="mt-6 text-center text-sm text-gray-600">
+          Already have an account?{' '}
+          <Link to="/login" className="text-blue-600 font-semibold hover:underline">
+            Login
+          </Link>
         </div>
       </div>
     </div>

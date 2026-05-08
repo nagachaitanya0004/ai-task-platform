@@ -2,30 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import StatusBadge from '../components/StatusBadge';
-import LoadingSpinner from '../components/LoadingSpinner';
-import ErrorMessage from '../components/ErrorMessage';
+import { formatDistanceToNow } from 'date-fns';
+import { Loader2, PlusCircle, ArrowRight } from 'lucide-react';
 
 const Dashboard = () => {
+  const navigate = useNavigate();
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  
-  // Form state
-  const [title, setTitle] = useState('');
-  const [inputText, setInputText] = useState('');
-  const [operation, setOperation] = useState('uppercase');
   const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState('');
-  
-  const navigate = useNavigate();
+  const [formData, setFormData] = useState({ title: '', operation: 'summarize', inputText: '' });
 
   const fetchTasks = async () => {
     try {
-      const res = await api.get('/tasks');
-      setTasks(res.data);
-      setError('');
-    } catch (err) {
-      setError('Failed to fetch tasks.');
+      const { data } = await api.get('/api/tasks');
+      setTasks(data);
+    } catch (error) {
+      console.error('Error fetching tasks', error);
     } finally {
       setLoading(false);
     }
@@ -35,134 +27,126 @@ const Dashboard = () => {
     fetchTasks();
   }, []);
 
-  const handleCreateTask = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
-    setSubmitError('');
-    
     try {
-      await api.post('/tasks', { title, inputText, operation });
-      setTitle('');
-      setInputText('');
-      setOperation('uppercase');
-      fetchTasks();
-    } catch (err) {
-      setSubmitError(err.response?.data?.message || 'Failed to create task');
+      await api.post('/api/tasks', formData);
+      setFormData({ title: '', operation: 'summarize', inputText: '' });
+      fetchTasks(); // Immediately re-fetch after creation
+    } catch (error) {
+      alert('Failed to create task');
     } finally {
       setSubmitting(false);
     }
   };
 
+  const getOperationColor = (op) => {
+    const colors = {
+      summarize: 'bg-purple-100 text-purple-800',
+      analyze: 'bg-indigo-100 text-indigo-800',
+      extract: 'bg-cyan-100 text-cyan-800'
+    };
+    return colors[op] || 'bg-gray-100 text-gray-800';
+  };
+
   return (
     <div className="flex flex-col lg:flex-row gap-8">
-      {/* LEFT: New Task Form */}
-      <div className="lg:w-1/3">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 sticky top-8">
-          <h2 className="text-xl font-bold text-gray-900 mb-6">New Task</h2>
-          
-          <ErrorMessage message={submitError} />
-          
-          <form onSubmit={handleCreateTask} className="space-y-4">
+      {/* Sidebar Form */}
+      <div className="w-full lg:w-1/3">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sticky top-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+            <PlusCircle className="w-5 h-5 text-blue-600" />
+            New AI Task
+          </h2>
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Task Title</label>
               <input
-                id="title"
                 type="text"
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. My first task"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+                value={formData.title}
+                onChange={(e) => setFormData({...formData, title: e.target.value})}
               />
             </div>
-            
             <div>
-              <label htmlFor="inputText" className="block text-sm font-medium text-gray-700 mb-1">Input Text</label>
-              <textarea
-                id="inputText"
-                required
-                rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                placeholder="Enter text to process..."
-              />
-            </div>
-            
-            <div>
-              <label htmlFor="operation" className="block text-sm font-medium text-gray-700 mb-1">Operation</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Operation</label>
               <select
-                id="operation"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
-                value={operation}
-                onChange={(e) => setOperation(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
+                value={formData.operation}
+                onChange={(e) => setFormData({...formData, operation: e.target.value})}
               >
-                <option value="uppercase">Uppercase</option>
-                <option value="lowercase">Lowercase</option>
-                <option value="reverse">Reverse</option>
-                <option value="wordcount">Word Count</option>
+                <option value="summarize">Summarize Text</option>
+                <option value="analyze">Analyze Sentiment</option>
+                <option value="extract">Extract Entities</option>
               </select>
             </div>
-            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Input Text</label>
+              <textarea
+                required
+                rows={5}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+                value={formData.inputText}
+                onChange={(e) => setFormData({...formData, inputText: e.target.value})}
+              />
+            </div>
             <button
               type="submit"
               disabled={submitting}
-              className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary ${submitting ? 'opacity-70 cursor-not-allowed' : ''}`}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-md transition-colors flex justify-center items-center gap-2"
             >
-              {submitting ? 'Creating...' : 'Create Task'}
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Run Task'}
             </button>
           </form>
         </div>
       </div>
 
-      {/* RIGHT: Task List */}
-      <div className="lg:w-2/3">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">Your Tasks</h2>
-        
-        <ErrorMessage message={error} />
-        
-        {loading ? (
-          <LoadingSpinner />
-        ) : tasks.length === 0 ? (
-          <div className="bg-white border border-gray-200 rounded-xl p-12 text-center">
-            <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            <h3 className="mt-2 text-sm font-medium text-gray-900">No tasks</h3>
-            <p className="mt-1 text-sm text-gray-500">Get started by creating a new task.</p>
+      {/* Main Task List */}
+      <div className="w-full lg:w-2/3">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+            <h2 className="text-lg font-semibold text-gray-800">Your Tasks</h2>
+            <span className="text-sm text-gray-500">{tasks.length} total</span>
           </div>
-        ) : (
-          <div className="bg-white shadow-sm border border-gray-200 rounded-xl overflow-hidden">
-            <ul className="divide-y divide-gray-200">
-              {tasks.map((task) => (
-                <li 
+          
+          <div className="divide-y divide-gray-100">
+            {loading ? (
+              <div className="p-8 flex justify-center">
+                <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+              </div>
+            ) : tasks.length === 0 ? (
+              <div className="p-8 text-center text-gray-500">
+                No tasks yet. Create one on the left!
+              </div>
+            ) : (
+              tasks.map(task => (
+                <div 
                   key={task._id} 
-                  className="hover:bg-gray-50 cursor-pointer transition-colors"
                   onClick={() => navigate(`/tasks/${task._id}`)}
+                  className="p-6 hover:bg-gray-50 cursor-pointer transition-colors group flex items-start justify-between"
                 >
-                  <div className="px-4 py-4 sm:px-6 flex items-center justify-between">
-                    <div className="flex flex-col gap-2">
-                      <p className="text-sm font-semibold text-primary truncate">{task.title}</p>
-                      <div className="flex gap-2 text-xs text-gray-500 items-center">
-                        <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-600 border border-gray-200">
-                          {task.operation}
-                        </span>
-                        <span>•</span>
-                        <span>{new Date(task.createdAt).toLocaleString()}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center">
+                  <div className="space-y-2">
+                    <h3 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
+                      {task.title}
+                    </h3>
+                    <div className="flex items-center gap-3 text-sm">
+                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getOperationColor(task.operation)}`}>
+                        {task.operation}
+                      </span>
                       <StatusBadge status={task.status} />
-                      <svg className="ml-4 h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                      </svg>
+                      <span className="text-gray-400">
+                        {formatDistanceToNow(new Date(task.createdAt), { addSuffix: true })}
+                      </span>
                     </div>
                   </div>
-                </li>
-              ))}
-            </ul>
+                  <ArrowRight className="w-5 h-5 text-gray-300 group-hover:text-blue-500 transition-colors self-center" />
+                </div>
+              ))
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
