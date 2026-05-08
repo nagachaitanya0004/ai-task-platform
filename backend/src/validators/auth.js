@@ -14,7 +14,7 @@ const registerSchema = Joi.object({
     .pattern(/^(?=.*[A-Z])(?=.*[0-9])/)
     .required()
     .messages({
-      'string.pattern.base': 'Password must contain at least one uppercase letter and one number'
+      'string.pattern.base': 'Password must contain at least 1 uppercase letter and 1 number'
     })
 });
 

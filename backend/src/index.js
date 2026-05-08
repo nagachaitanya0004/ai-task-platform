@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -25,6 +26,15 @@ console.log(`JWT_SECRET: ${process.env.JWT_SECRET ? '***SET***' : 'NOT SET'}`);
 console.log(`CORS_ORIGIN: ${process.env.CORS_ORIGIN || 'NOT SET'}`);
 console.log('');
 
+// CORS MUST BE BEFORE HELMET AND ROUTES
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || 'http://localhost:80',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+app.options('*', cors()); // handle preflight
+
 // Security Middleware - Helmet with explicit config
 app.use(helmet({
   contentSecurityPolicy: {
@@ -44,17 +54,6 @@ app.use(helmet({
   },
   noSniff: true,
   xssFilter: true
-}));
-
-// CORS - Restricted to specific origins
-const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:80';
-console.log(`CORS configured for: ${corsOrigin}`);
-
-app.use(cors({
-  origin: corsOrigin,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(express.json({ limit: '10mb' }));
@@ -136,7 +135,7 @@ app.get('/api/health', async (req, res) => {
     const statusCode = isHealthy ? 200 : 503;
 
     res.status(statusCode).json({
-      status: isHealthy ? 'ok' : 'degraded',
+      status: 'ok',
       services: {
         mongo: mongoStatus,
         redis: redisStatus

@@ -44,6 +44,7 @@ services:
       - JWT_SECRET=${JWT_SECRET:-supersecretjwt}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - CORS_ORIGIN=http://localhost:80
     networks:
       - app-net
     depends_on:
@@ -76,6 +77,8 @@ services:
     restart: always
     ports:
       - "80:80"
+    environment:
+      - VITE_API_URL=http://localhost:5000
     networks:
       - app-net
     depends_on:
