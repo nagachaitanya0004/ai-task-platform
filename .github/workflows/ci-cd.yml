@@ -1,0 +1,141 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+env:
+  REGISTRY: docker.io
+
+jobs:
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install backend dependencies
+        run: cd backend && npm ci
+
+      - name: Install frontend dependencies
+        run: cd frontend && npm ci
+
+      - name: Lint backend
+        run: cd backend && npx eslint src/ --ext .js --max-warnings 0
+
+      - name: Lint frontend
+        run: cd frontend && npx eslint src/ --ext .jsx --max-warnings 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install flake8
+        run: pip install flake8==7.0.0
+
+      - name: Lint worker
+        run: cd worker && flake8 main.py --max-line-length=100
+
+  build-and-push:
+    name: Build and Push Docker Images
+    needs: lint
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    outputs:
+      image-tag: ${{ env.IMAGE_TAG }}
+    env:
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/ai-task-backend:${{ env.IMAGE_TAG }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/ai-task-backend:latest
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/ai-task-backend:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/ai-task-backend:buildcache,mode=max
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/ai-task-frontend:${{ env.IMAGE_TAG }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/ai-task-frontend:latest
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/ai-task-frontend:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/ai-task-frontend:buildcache,mode=max
+
+      - name: Build and push worker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./worker
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/ai-task-worker:${{ env.IMAGE_TAG }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/ai-task-worker:latest
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/ai-task-worker:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/ai-task-worker:buildcache,mode=max
+
+  update-infra:
+    name: Update Infrastructure Repository
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout infra repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.INFRA_REPO }}
+          token: ${{ secrets.INFRA_PAT }}
+          ref: main
+
+      - name: Update backend image tag
+        run: |
+          sed -i "s|ai-task-backend:.*|ai-task-backend:${{ needs.build-and-push.outputs.image-tag }}|g" infra/backend/deployment.yaml
+
+      - name: Update frontend image tag
+        run: |
+          sed -i "s|ai-task-frontend:.*|ai-task-frontend:${{ needs.build-and-push.outputs.image-tag }}|g" infra/frontend/deployment.yaml
+
+      - name: Update worker image tag
+        run: |
+          sed -i "s|ai-task-worker:.*|ai-task-worker:${{ needs.build-and-push.outputs.image-tag }}|g" infra/worker/deployment.yaml
+
+      - name: Configure git
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+      - name: Commit and push changes
+        run: |
+          git add infra/backend/deployment.yaml infra/frontend/deployment.yaml infra/worker/deployment.yaml
+          git commit -m "ci: update image tags to ${{ needs.build-and-push.outputs.image-tag }} [skip ci]"
+          git push origin main
