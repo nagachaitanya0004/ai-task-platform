@@ -1,0 +1,19 @@
+const Joi = require('joi');
+
+const createTaskSchema = Joi.object({
+  title: Joi.string()
+    .min(1)
+    .max(100)
+    .required(),
+  inputText: Joi.string()
+    .min(1)
+    .max(10000)
+    .required(),
+  operation: Joi.string()
+    .valid('uppercase', 'lowercase', 'reverse', 'wordcount')
+    .required()
+});
+
+module.exports = {
+  createTaskSchema
+};

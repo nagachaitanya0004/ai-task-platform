@@ -1,13 +1,14 @@
 const express = require('express');
 const Task = require('../models/Task');
 const { verifyToken } = require('../middleware/auth');
-const redisClient = require('../index').redisClient;
+const validate = require('../middleware/validate');
+const { createTaskSchema } = require('../validators/task');
 
 const router = express.Router();
 
 router.use(verifyToken);
 
-router.post('/', async (req, res) => {
+router.post('/', validate(createTaskSchema), async (req, res, next) => {
   try {
     const { title, inputText, operation } = req.body;
     
@@ -21,7 +22,6 @@ router.post('/', async (req, res) => {
     
     await task.save();
 
-    // Push to Redis
     const redisClient = req.app.locals.redisClient;
     const jobPayload = JSON.stringify({
       taskId: task._id.toString(),
@@ -33,28 +33,31 @@ router.post('/', async (req, res) => {
     
     res.status(201).json(task);
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    next(error);
   }
 });
 
-router.get('/', async (req, res) => {
+router.get('/', async (req, res, next) => {
   try {
     const tasks = await Task.find({ userId: req.user.id }).sort({ createdAt: -1 });
     res.json(tasks);
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    next(error);
   }
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', async (req, res, next) => {
   try {
     const task = await Task.findOne({ _id: req.params.id, userId: req.user.id });
     if (!task) {
-      return res.status(404).json({ message: 'Task not found' });
+      const err = new Error('Task not found');
+      err.isOperational = true;
+      err.statusCode = 404;
+      return next(err);
     }
     res.json(task);
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    next(error);
   }
 });
 

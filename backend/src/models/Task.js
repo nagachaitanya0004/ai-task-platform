@@ -18,4 +18,7 @@ const taskSchema = new mongoose.Schema({
   logs: { type: [String], default: [] }
 }, { timestamps: true });
 
+taskSchema.index({ userId: 1, createdAt: -1 });
+taskSchema.index({ status: 1 });
+
 module.exports = mongoose.model('Task', taskSchema);
