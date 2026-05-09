@@ -1,34 +1,25 @@
-# Build stage
-FROM node:20-alpine AS builder
+FROM node:18-alpine AS builder
 
 WORKDIR /app
+
 COPY package*.json ./
 RUN npm ci
 
 COPY . .
+
+# Pass VITE_API_URL at build time
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
+
 RUN npm run build
 
-# Serve stage
 FROM nginx:alpine
 
-# Copy built files
+# Copy the custom Nginx configuration
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Copy the built React app
 COPY --from=builder /app/dist /usr/share/nginx/html
-
-# Replace default config for client-side routing
-RUN echo 'server { \
-    listen 80; \
-    location / { \
-        root /usr/share/nginx/html; \
-        index index.html index.htm; \
-        try_files $uri $uri/ /index.html; \
-    } \
-}' > /etc/nginx/conf.d/default.conf
-
-# Run as non-root
-RUN chown -R nginx:nginx /usr/share/nginx/html /var/cache/nginx /var/log/nginx /etc/nginx/conf.d
-RUN touch /var/run/nginx.pid && chown -R nginx:nginx /var/run/nginx.pid
-
-USER nginx
 
 EXPOSE 80
 

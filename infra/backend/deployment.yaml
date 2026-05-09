@@ -25,8 +25,17 @@ spec:
         envFrom:
         - configMapRef:
             name: ai-task-config
-        - secretRef:
-            name: ai-task-secret
+        env:
+        - name: MONGO_URI
+          valueFrom:
+            secretKeyRef:
+              name: ai-task-secret
+              key: MONGO_URI
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: ai-task-secret
+              key: JWT_SECRET
         resources:
           requests:
             cpu: 200m
@@ -38,8 +47,9 @@ spec:
           httpGet:
             path: /api/health
             port: 5000
-          initialDelaySeconds: 20
+          initialDelaySeconds: 30
           periodSeconds: 10
+          timeoutSeconds: 5
           failureThreshold: 3
         readinessProbe:
           httpGet:
@@ -47,3 +57,4 @@ spec:
             port: 5000
           initialDelaySeconds: 10
           periodSeconds: 5
+          timeoutSeconds: 3

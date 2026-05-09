@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import StatusBadge from '../components/StatusBadge';
@@ -17,31 +17,36 @@ const TaskDetail = () => {
   const [loading, setLoading] = useState(true);
   const logsEndRef = useRef(null);
 
-  const fetchTask = async () => {
+  const fetchTask = useCallback(async () => {
     try {
       const { data } = await api.get(`/api/tasks/${id}`);
       setTask(data);
     } catch (err) {
-      toast.error('Failed to load task details');
+      if (loading) toast.error('Failed to load task details');
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, loading]);
 
+  // Initial fetch
   useEffect(() => {
     fetchTask();
-    let interval;
-    if (task && ['pending', 'running'].includes(task.status)) {
-      interval = setInterval(fetchTask, 3000);
-    }
-    return () => clearInterval(interval);
-  }, [id, task?.status]);
+  }, [id]);
 
+  // Polling — separate effect that watches task.status
+  useEffect(() => {
+    if (!task || !['pending', 'running'].includes(task.status)) return;
+    const interval = setInterval(fetchTask, 3000);
+    return () => clearInterval(interval);
+  }, [task?.status, fetchTask]);
+
+  // Auto-scroll logs
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [task?.logs]);
+  }, [task?.logs?.length]);
 
-  const copyToClipboard = (text) => {
+  const copyToClipboard = (value) => {
+    const text = typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
     navigator.clipboard.writeText(text);
     toast.success('Copied to clipboard!');
   };
@@ -72,7 +77,7 @@ const TaskDetail = () => {
   );
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-10 space-y-8 animate-in fade-in duration-500">
+    <div className="max-w-5xl mx-auto px-4 py-10 space-y-8">
       {/* Navigation Header */}
       <div className="flex items-center justify-between">
         <button 
@@ -105,7 +110,7 @@ const TaskDetail = () => {
               <StatusBadge status={task.status} />
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-4 border-t border-slate-50">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-4 border-t border-slate-100">
               <div>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Process</p>
                 <OperationBadge operation={task.operation} />
@@ -128,8 +133,8 @@ const TaskDetail = () => {
           </div>
 
           {/* Result Section */}
-          {task.status === 'success' && (
-            <div className="bg-emerald-50 rounded-3xl border border-emerald-100 p-8 space-y-6 shadow-sm shadow-emerald-100">
+          {task.status === 'success' && task.result != null && (
+            <div className="bg-emerald-50 rounded-3xl border border-emerald-100 p-8 space-y-6 shadow-sm">
               <div className="flex items-center justify-between">
                 <h3 className="text-emerald-900 font-black text-sm uppercase tracking-widest flex items-center gap-2">
                   <CheckCircle2 size={18} className="text-emerald-600" />
@@ -144,7 +149,20 @@ const TaskDetail = () => {
                 </button>
               </div>
               <div className="bg-white rounded-2xl p-6 text-slate-800 text-lg font-mono whitespace-pre-wrap border border-emerald-200/30 shadow-inner">
-                {typeof task.result === 'object' ? JSON.stringify(task.result, null, 2) : task.result}
+                {typeof task.result === 'object' ? JSON.stringify(task.result, null, 2) : String(task.result)}
+              </div>
+            </div>
+          )}
+
+          {/* Failed Section */}
+          {task.status === 'failed' && (
+            <div className="bg-red-50 rounded-3xl border border-red-100 p-8 space-y-4 shadow-sm">
+              <h3 className="text-red-900 font-black text-sm uppercase tracking-widest flex items-center gap-2">
+                <Activity size={18} className="text-red-600" />
+                Execution Failed
+              </h3>
+              <div className="bg-white rounded-2xl p-6 text-red-700 text-sm font-mono border border-red-200/30">
+                {task.error || 'An unknown error occurred during processing.'}
               </div>
             </div>
           )}
@@ -160,8 +178,8 @@ const TaskDetail = () => {
 
         {/* Right Column - Logs Sidebar */}
         <div className="space-y-8">
-          <div className="bg-surface rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[600px] sticky top-8 border border-slate-700/50">
-            <div className="px-6 py-4 border-b border-slate-700 bg-slate-900 flex justify-between items-center">
+          <div className="bg-surface rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[600px] sticky top-24 border border-surface-border">
+            <div className="px-6 py-4 border-b border-surface-border bg-surface-card flex justify-between items-center">
               <h3 className="text-sm font-black text-slate-300 uppercase tracking-widest flex items-center gap-2">
                 <Terminal size={18} className="text-brand-500" />
                 Live Console
@@ -169,25 +187,25 @@ const TaskDetail = () => {
               {['pending', 'running'].includes(task.status) && (
                 <div className="flex gap-1">
                   <span className="w-1.5 h-1.5 bg-brand-500 rounded-full animate-pulse"></span>
-                  <span className="w-1.5 h-1.5 bg-brand-500 rounded-full animate-pulse delay-75"></span>
-                  <span className="w-1.5 h-1.5 bg-brand-500 rounded-full animate-pulse delay-150"></span>
+                  <span className="w-1.5 h-1.5 bg-brand-500 rounded-full animate-pulse" style={{animationDelay: '75ms'}}></span>
+                  <span className="w-1.5 h-1.5 bg-brand-500 rounded-full animate-pulse" style={{animationDelay: '150ms'}}></span>
                 </div>
               )}
             </div>
             
-            <div className="flex-1 overflow-y-auto p-6 space-y-4 font-mono text-[12px] scrollbar-thin scrollbar-thumb-slate-700">
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 font-mono text-[12px] scrollbar-thin">
               {task.logs && task.logs.length > 0 ? (
                 <div className="space-y-4">
                   {task.logs.map((log, i) => (
-                    <div key={i} className="group flex gap-3 items-start animate-in slide-in-from-left-2 duration-300">
+                    <div key={i} className="group flex gap-3 items-start">
                       <span className="text-slate-600 font-bold shrink-0">
-                        {format(new Date(log.timestamp), 'HH:mm:ss')}
+                        {log.timestamp ? format(new Date(log.timestamp), 'HH:mm:ss') : '--:--:--'}
                       </span>
                       <div className="space-y-1">
                         <span className={`font-black uppercase tracking-widest text-[10px] ${
                           log.level === 'error' ? 'text-red-400' : 'text-emerald-400'
                         }`}>
-                          [{log.level}]
+                          [{log.level || 'info'}]
                         </span>
                         <p className="text-slate-300 leading-relaxed group-hover:text-white transition-colors">{log.message}</p>
                       </div>
@@ -197,18 +215,24 @@ const TaskDetail = () => {
                 </div>
               ) : (
                 <div className="h-full flex flex-col items-center justify-center space-y-4 text-center">
-                  <div className="w-12 h-12 bg-slate-800 rounded-xl flex items-center justify-center text-slate-600">
+                  <div className="w-12 h-12 bg-surface-card rounded-xl flex items-center justify-center text-slate-600">
                     <Activity size={24} className="animate-pulse" />
                   </div>
-                  <p className="text-slate-600 font-bold uppercase text-[10px] tracking-widest italic">Waiting for execution stream...</p>
+                  <p className="text-slate-600 font-bold uppercase text-[10px] tracking-widest italic">
+                    {['pending', 'running'].includes(task.status) 
+                      ? 'Waiting for execution stream...' 
+                      : 'No logs recorded for this task.'}
+                  </p>
                 </div>
               )}
             </div>
 
-            <div className="px-6 py-4 bg-slate-900 border-t border-slate-700">
+            <div className="px-6 py-4 bg-surface-card border-t border-surface-border">
               <div className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                Environment Ready
+                <span className={`w-2 h-2 rounded-full ${
+                  ['pending', 'running'].includes(task.status) ? 'bg-brand-500 animate-pulse' : 'bg-emerald-500'
+                }`}></span>
+                {['pending', 'running'].includes(task.status) ? 'Processing...' : 'Execution Complete'}
               </div>
             </div>
           </div>

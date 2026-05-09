@@ -12,6 +12,8 @@ const { createClient } = require('redis');
 const authRoutes = require('./routes/auth');
 const taskRoutes = require('./routes/tasks');
 const errorHandler = require('./middleware/errorHandler');
+const User = require('./models/User');
+const Task = require('./models/Task');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -39,12 +41,11 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function(origin, callback) {
-    // Allow requests with no origin (curl, Postman, health checks)
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       console.warn(`CORS blocked request from origin: ${origin}`);
-      callback(null, true); // In dev mode, allow anyway but warn
+      callback(null, true); 
     }
   },
   credentials: true,
@@ -55,13 +56,11 @@ app.options('*', cors());
 
 // ─── Security ────────────────────────────────────────────────────────
 app.use(helmet({
-  contentSecurityPolicy: false, // Disable CSP in dev to avoid blocking frontend
+  contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false
 }));
 
 app.use(express.json({ limit: '10mb' }));
-
-// Request Logging
 app.use(morgan(NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // ─── Rate Limiting ───────────────────────────────────────────────────
@@ -76,12 +75,12 @@ app.use(globalLimiter);
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 50, // More forgiving for dev/testing
+  max: 50,
   standardHeaders: true,
   legacyHeaders: false
 });
 
-// ─── Redis connection (optional — app works without it) ──────────────
+// ─── Redis connection (optional) ──────────────
 let redisClient = null;
 let redisReady = false;
 
@@ -91,7 +90,7 @@ async function connectRedis() {
       url: `redis://${process.env.REDIS_HOST || 'localhost'}:${process.env.REDIS_PORT || 6379}`,
       socket: {
         reconnectStrategy: (retries) => {
-          if (retries > 10) return false; // Stop retrying after 10 attempts
+          if (retries > 10) return false;
           return Math.min(retries * 100, 3000);
         }
       }
@@ -119,31 +118,7 @@ async function connectRedis() {
   }
 }
 
-app.locals.redisClient = null; // Will be set after connection
-
-// ─── MongoDB connection ──────────────────────────────────────────────
-const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/aitasks';
-console.log(`Connecting to MongoDB: ${mongoUri}`);
-
-mongoose.connect(mongoUri)
-  .then(() => {
-    console.log('✅ MongoDB connected');
-    console.log(`Database: ${mongoose.connection.name}`);
-  })
-  .catch(err => {
-    console.error('❌ MongoDB connection error:', err.message);
-    process.exit(1);
-  });
-
-mongoose.connection.on('disconnected', () => {
-  console.warn('⚠️  MongoDB disconnected');
-});
-
-mongoose.connection.on('error', (err) => {
-  console.error('❌ MongoDB error:', err);
-});
-
-// ─── Health endpoint (NO auth) ───────────────────────────────────────
+// ─── Routes ──────────────────────────────────────────────────────────
 app.get('/api/health', async (req, res) => {
   try {
     const mongoStatus = mongoose.connection.readyState === 1 ? 'up' : 'down';
@@ -180,7 +155,6 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// ─── Routes ──────────────────────────────────────────────────────────
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/tasks', taskRoutes);
 
@@ -199,21 +173,38 @@ app.use(errorHandler);
 
 // ─── Start server ────────────────────────────────────────────────────
 async function startServer() {
-  // Try to connect Redis, but don't block server start
+  const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/aitasks';
+  console.log(`Connecting to MongoDB: ${mongoUri}`);
+
+  try {
+    await mongoose.connect(mongoUri);
+    console.log('✅ MongoDB connected');
+    console.log(`Database: ${mongoose.connection.name}`);
+    
+    // Ensure indexes are created on startup
+    await User.createIndexes();
+    await Task.createIndexes();
+    console.log('✅ MongoDB indexes ensured');
+  } catch (err) {
+    console.error('❌ MongoDB connection error:', err.message);
+    process.exit(1);
+  }
+
+  mongoose.connection.on('disconnected', () => {
+    console.warn('⚠️  MongoDB disconnected');
+  });
+
+  mongoose.connection.on('error', (err) => {
+    console.error('❌ MongoDB error:', err);
+  });
+
+  // Try to connect Redis
   await connectRedis();
   app.locals.redisClient = redisClient;
 
   app.listen(PORT, () => {
     console.log('');
     console.log(`✅ Server running on port ${PORT} in ${NODE_ENV} mode`);
-    console.log('');
-    console.log('Available endpoints:');
-    console.log('  POST   /api/auth/register');
-    console.log('  POST   /api/auth/login');
-    console.log('  POST   /api/tasks');
-    console.log('  GET    /api/tasks');
-    console.log('  GET    /api/tasks/:id');
-    console.log('  GET    /api/health');
     console.log('');
   });
 }

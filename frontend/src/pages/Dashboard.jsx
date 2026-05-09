@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
-import OperationBadge from '../components/OperationBadge';
 import TaskCard from '../components/TaskCard';
 import { 
   Loader2, Plus, LayoutDashboard, Clock, CheckCircle, 
-  Play, ListFilter, Search, ArrowUpRight, ChevronDown, ChevronUp
+  Play, ListFilter, Search, ChevronDown, ChevronUp, Zap
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -15,6 +14,7 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [formData, setFormData] = useState({ title: '', operation: 'uppercase', inputText: '' });
 
   const fetchTasks = async () => {
@@ -30,7 +30,7 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchTasks();
-    const interval = setInterval(fetchTasks, 10000); // Background refresh
+    const interval = setInterval(fetchTasks, 10000);
     return () => clearInterval(interval);
   }, []);
 
@@ -44,7 +44,8 @@ const Dashboard = () => {
       setIsFormOpen(false);
       fetchTasks();
     } catch (error) {
-      toast.error('Failed to create task');
+      const msg = error.response?.data?.error || error.response?.data?.details?.[0]?.message || 'Failed to create task';
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }
@@ -56,6 +57,12 @@ const Dashboard = () => {
     running: tasks.filter(t => t.status === 'running').length,
     completed: tasks.filter(t => t.status === 'success').length
   };
+
+  const filteredTasks = tasks.filter(t =>
+    t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    t.operation.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    t.status.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-10">
@@ -103,7 +110,7 @@ const Dashboard = () => {
 
       {/* Create Task Form */}
       {isFormOpen && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
           <div className="bg-slate-50 px-8 py-4 border-b border-slate-200">
             <h3 className="font-bold text-slate-700 flex items-center gap-2">
               <Zap className="text-brand-500" size={18} />
@@ -178,6 +185,8 @@ const Dashboard = () => {
             <input 
               type="text" 
               placeholder="Filter tasks..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500 transition-all w-full sm:w-64"
             />
           </div>
@@ -189,14 +198,20 @@ const Dashboard = () => {
               <Loader2 className="w-12 h-12 text-brand-500 animate-spin" />
               <p className="text-slate-500 font-medium">Synchronizing task queue...</p>
             </div>
-          ) : tasks.length === 0 ? (
+          ) : filteredTasks.length === 0 ? (
             <div className="p-20 text-center space-y-6">
               <div className="w-20 h-20 bg-slate-100 rounded-3xl flex items-center justify-center mx-auto text-slate-300">
                 <ListFilter size={40} />
               </div>
               <div className="space-y-1">
-                <p className="text-xl font-bold text-slate-900">No tasks yet</p>
-                <p className="text-slate-500 max-w-xs mx-auto text-sm">Create your first processing task using the "New Task" button above.</p>
+                <p className="text-xl font-bold text-slate-900">
+                  {tasks.length === 0 ? 'No tasks yet' : 'No matching tasks'}
+                </p>
+                <p className="text-slate-500 max-w-xs mx-auto text-sm">
+                  {tasks.length === 0 
+                    ? 'Create your first processing task using the "New Task" button above.'
+                    : 'Try adjusting your search query.'}
+                </p>
               </div>
             </div>
           ) : (
@@ -206,12 +221,12 @@ const Dashboard = () => {
                   <th className="px-8 py-4">Task Info</th>
                   <th className="px-8 py-4">Operation</th>
                   <th className="px-8 py-4 text-center">Status</th>
-                  <th className="px-8 py-4">Execution Time</th>
+                  <th className="px-8 py-4">Created</th>
                   <th className="px-8 py-4 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {tasks.map(task => (
+                {filteredTasks.map(task => (
                   <TaskCard key={task._id} task={task} />
                 ))}
               </tbody>

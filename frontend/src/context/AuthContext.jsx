@@ -4,25 +4,34 @@ import { jwtDecode } from 'jwt-decode';
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [token, setToken] = useState(localStorage.getItem('token') || null);
-  const [user, setUser] = useState(() => {
-    const savedUser = localStorage.getItem('user');
-    return savedUser ? JSON.parse(savedUser) : null;
-  });
+  const [loading, setLoading] = useState(true);
+  const [token, setToken] = useState(null);
+  const [user, setUser] = useState(null);
 
+  // On mount, validate the stored token
   useEffect(() => {
-    if (token) {
+    const storedToken = localStorage.getItem('token');
+    const storedUser = localStorage.getItem('user');
+
+    if (storedToken) {
       try {
-        const decoded = jwtDecode(token);
-        // Expiration is in seconds, Date.now() is in ms
+        const decoded = jwtDecode(storedToken);
         if (decoded.exp * 1000 < Date.now()) {
-          logout();
+          // Token expired — clear everything
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+        } else {
+          setToken(storedToken);
+          setUser(storedUser ? JSON.parse(storedUser) : null);
         }
       } catch (err) {
-        logout();
+        // Malformed token
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
       }
     }
-  }, [token]);
+    setLoading(false);
+  }, []);
 
   const login = (newToken, newUser) => {
     setToken(newToken);
@@ -36,11 +45,10 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    window.location.href = '/login';
   };
 
   return (
-    <AuthContext.Provider value={{ token, user, login, logout }}>
+    <AuthContext.Provider value={{ token, user, login, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );

@@ -4,8 +4,8 @@ metadata:
   name: ai-task-config
   namespace: ai-task-platform
 data:
-  MONGO_HOST: "mongo"
+  PORT: "5000"
+  NODE_ENV: "production"
   REDIS_HOST: "redis"
   REDIS_PORT: "6379"
-  NODE_ENV: "production"
-  VITE_API_URL: "http://localhost/api"
+  CORS_ORIGIN: "http://localhost"

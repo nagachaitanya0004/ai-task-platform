@@ -10,8 +10,16 @@ import Navbar from './components/Navbar';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 const AppRoutes = () => {
-  const { token } = useAuth();
-  
+  const { token, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="w-10 h-10 border-4 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
   return (
     <Routes>
       <Route path="/login" element={token ? <Navigate to="/dashboard" /> : <Login />} />
